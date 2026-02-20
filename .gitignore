@@ -20,6 +20,11 @@ wheels/
 .vscode/
 .trae/
 
+# Data and model weights
+DeepAnalyze-8B/
+data/
+models/
+
 #other
 **/.claude/
 **/workspace/
