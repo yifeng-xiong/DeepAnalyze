@@ -21,7 +21,7 @@ class ReactEnAgentTemplate(BaseAgentTemplate):
             )
 
         return (
-            """Answer the following questions as best you can. You have access to the following tools:
+            f"""{system}\n\nAnswer the following questions as best you can. You have access to the following tools:
 
 """
             + "\n\n".join(tool_descs)

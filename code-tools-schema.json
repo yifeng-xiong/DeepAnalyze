@@ -1,0 +1,70 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "createOrModifyOperator",
+        "description": "Add or modify a Python function as an operator in the dataflow, then automatically execute it.\n- If operatorId does NOT exist: creates a new operator\n- If operatorId exists: modifies the existing operator (must keep same type)\n- After creation/modification, the operator is automatically executed.\n\nRULES:\n1. operatorId must be a valid Python variable name\n2. Function name MUST be exactly \"load\" or \"process\"\n3. For process(): each parameter MUST match an existing operator's operatorId - links are auto-created/updated\n\n## def load() -> pd.DataFrame\nLoad data from files. No input parameters. File I/O allowed.\n\nExample: operatorId=\"customers\"\n  def load() -> pd.DataFrame:\n      return pd.read_csv('/data/customers.csv')\n\n## def process(opId1, opId2, ...) -> pd.DataFrame\nTransform input data. Each parameter references an existing operator id. Links between operators will be auto-created.\n\nExample: operatorId=\"filtered\" (requires \"customers\" to exist)\n  def process(customers) -> pd.DataFrame:\n      return customers[customers['age'] > 18]",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "operatorId": {
+              "type": "string",
+              "description": "Unique operator name (valid Python variable). Other operators reference this as input parameter."
+            },
+            "code": {
+              "type": "string",
+              "description": "Python function: def load() or def process(...)"
+            },
+            "summary": {
+              "type": "string",
+              "description": "Detailed summary of the operator behavior. For load() operators, include the filename(s) being loaded."
+            }
+          },
+          "required": [
+            "operatorId",
+            "code"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "deleteOperator",
+        "description": "Delete an operator from the workflow. This also deletes all connected links.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "operatorId": {
+              "type": "string",
+              "description": "ID of the operator to delete"
+            }
+          },
+          "required": [
+            "operatorId"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "executeOperator",
+        "description": "Execute the workflow and get the specified operator's result. The execution result (if succeeded) includes the shape of the input tables (if any) and output table, and the records in the output table.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "operatorId": {
+              "type": "string",
+              "description": "The operator ID to view result for."
+            }
+          },
+          "required": [
+            "operatorId"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -52,6 +52,10 @@ class InferRequest:
         last_role = messages[-1]["role"] if messages else None
         if last_role == "assistant":
             return messages.pop()["content"]
+        # Agent SFT rows often end with tool_call; strip it so infer continues from the
+        # prior turn (same as popping a trailing assistant label).
+        if last_role in ("tool_call", "tool"):
+            return messages.pop()["content"]
 
     @staticmethod
     def _to_printable(obj, key: Optional[str] = None):
