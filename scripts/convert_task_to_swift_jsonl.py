@@ -27,11 +27,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Iterator
 
 ROOT = Path(__file__).resolve().parent.parent
+THOUGHT_PREFIX_RE = re.compile(r"(?i)^thought:\s*")
+TURN_HEADING_RE = re.compile(r"^### Turn \d+\s*$")
+DUPLICATE_THOUGHT_PREFIX_RE = re.compile(
+    r"(?im)^(\s*Thought:\s*)(?:Thought:\s*)+"
+)
 
 
 def load_tools_from_file(path: Path) -> list[dict[str, Any]]:
@@ -59,6 +65,92 @@ def _normalize_user_content(content: Any) -> str:
     return json.dumps(content, ensure_ascii=False)
 
 
+def _collapse_blank_lines(text: str) -> str:
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _dedupe_duplicate_thought_prefixes(text: str) -> str:
+    """Collapse accidental `Thought: Thought: ...` into one prefix."""
+    return DUPLICATE_THOUGHT_PREFIX_RE.sub(r"\1", text)
+
+
+def _strip_leading_thought_from_assistant_text(text: str) -> str:
+    cleaned = _dedupe_duplicate_thought_prefixes(text).strip()
+    while cleaned:
+        if not THOUGHT_PREFIX_RE.match(cleaned):
+            break
+        cleaned = THOUGHT_PREFIX_RE.sub("", cleaned, count=1).lstrip()
+        parts = re.split(r"\n\s*\n", cleaned, maxsplit=1)
+        if len(parts) == 2 and parts[1].strip():
+            cleaned = parts[1].lstrip()
+        else:
+            break
+    return _collapse_blank_lines(cleaned)
+
+
+def _clean_embedded_history_text(text: str) -> str:
+    lines = _dedupe_duplicate_thought_prefixes(text).splitlines()
+    cleaned_lines: list[str] = []
+    skipping_thought_block = False
+
+    for line in lines:
+        stripped = line.lstrip()
+
+        if stripped.startswith("Above is user's request and the steps you already took."):
+            continue
+        if stripped.startswith(
+            "You as an assistant please keep working on solving user's request"
+        ):
+            continue
+
+        if THOUGHT_PREFIX_RE.match(stripped):
+            skipping_thought_block = True
+            continue
+
+        if skipping_thought_block:
+            if (
+                stripped.startswith("- ")
+                or stripped.startswith("#")
+                or stripped.startswith("Result:")
+                or stripped.startswith("Properties:")
+                or stripped.startswith("Summary:")
+                or stripped.startswith("code:")
+            ):
+                skipping_thought_block = False
+            elif stripped == "":
+                continue
+            else:
+                continue
+
+        cleaned_lines.append(line)
+
+    text = "\n".join(cleaned_lines)
+    text = re.sub(r"\n{2,}(?=### Turn \d+\s*(?:\n|$))", "\n", text)
+    text = re.sub(
+        r"(?ms)^### Turn \d+\s*\n(?=(?:### Turn \d+|# Current Dataflow|$))",
+        "",
+        text,
+    )
+    return _collapse_blank_lines(text)
+
+
+def _clean_user_content(content: Any, *, strip_thought: bool) -> str:
+    text = _dedupe_duplicate_thought_prefixes(_normalize_user_content(content))
+    if not strip_thought:
+        return _finalize_user_message_content(text)
+    return _finalize_user_message_content(_clean_embedded_history_text(text))
+
+
+def _clean_assistant_content(content: Any, *, strip_thought: bool) -> str | None:
+    text = _dedupe_duplicate_thought_prefixes(_normalize_user_content(content)).strip()
+    if not text:
+        return None
+    if strip_thought:
+        text = _strip_leading_thought_from_assistant_text(text)
+    return text or None
+
+
 def _finalize_user_message_content(text: str) -> str:
     """Append a trailing newline to user text when missing (spacing before assistant / tool_call)."""
     if text and not text.endswith("\n"):
@@ -83,6 +175,7 @@ def convert_messages(
     raw_messages: list[dict[str, Any]],
     *,
     system_text: str | None,
+    strip_thought: bool,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if system_text is not None and system_text.strip():
@@ -98,9 +191,7 @@ def convert_messages(
             out.append(
                 {
                     "role": "user",
-                    "content": _finalize_user_message_content(
-                        _normalize_user_content(content)
-                    ),
+                    "content": _clean_user_content(content, strip_thought=strip_thought),
                 }
             )
             i += 1
@@ -112,7 +203,11 @@ def convert_messages(
                 if part.get("type") == "text":
                     t = part.get("text")
                     if t:
-                        text_buf.append(str(t))
+                        cleaned = _clean_assistant_content(
+                            str(t), strip_thought=strip_thought
+                        )
+                        if cleaned:
+                            text_buf.append(cleaned)
                 elif part.get("type") == "tool-call":
                     if text_buf:
                         out.append({"role": "assistant", "content": "\n".join(text_buf)})
@@ -171,8 +266,13 @@ def record_to_swift_line(
     *,
     system_text: str | None,
     tools: list[dict[str, Any]],
+    strip_thought: bool,
 ) -> dict[str, Any]:
-    messages = convert_messages(record["messages"], system_text=system_text)
+    messages = convert_messages(
+        record["messages"],
+        system_text=system_text,
+        strip_thought=strip_thought,
+    )
     return {
         "tools": json.dumps(tools, ensure_ascii=False),
         "messages": messages,
@@ -204,7 +304,9 @@ def collect_react_steps_files(
     return files
 
 
-def _user_content_from_input_messages(input_messages: Any) -> str | None:
+def _user_content_from_input_messages(
+    input_messages: Any, *, strip_thought: bool
+) -> str | None:
     if not isinstance(input_messages, list):
         return None
     user_parts: list[str] = []
@@ -216,10 +318,7 @@ def _user_content_from_input_messages(input_messages: Any) -> str | None:
         c = m.get("content")
         if c is None:
             continue
-        if isinstance(c, str):
-            user_parts.append(c)
-        else:
-            user_parts.append(_normalize_user_content(c))
+        user_parts.append(_clean_user_content(c, strip_thought=strip_thought).rstrip())
     if not user_parts:
         return None
     return _finalize_user_message_content("\n\n".join(user_parts))
@@ -232,12 +331,15 @@ def react_step_to_swift_line(
     tools: list[dict[str, Any]],
     source_path: Path,
     step_index: int,
+    strip_thought: bool,
 ) -> dict[str, Any] | None:
     tool_calls = step.get("toolCalls") or []
     if not isinstance(tool_calls, list) or not tool_calls:
         return None
 
-    user_text = _user_content_from_input_messages(step.get("inputMessages"))
+    user_text = _user_content_from_input_messages(
+        step.get("inputMessages"), strip_thought=strip_thought
+    )
     if user_text is None:
         print(
             f"skip {source_path} step[{step_index}]: no user content in inputMessages",
@@ -250,9 +352,11 @@ def react_step_to_swift_line(
         messages.append({"role": "system", "content": system_text.strip()})
     messages.append({"role": "user", "content": user_text})
 
-    assistant_text = step.get("content")
-    if isinstance(assistant_text, str) and assistant_text.strip():
-        messages.append({"role": "assistant", "content": assistant_text.strip()})
+    assistant_text = _clean_assistant_content(
+        step.get("content"), strip_thought=strip_thought
+    )
+    if assistant_text:
+        messages.append({"role": "assistant", "content": assistant_text})
 
     for tc in tool_calls:
         if not isinstance(tc, dict):
@@ -290,17 +394,22 @@ def react_final_assistant_step_to_swift_line(
     tools: list[dict[str, Any]],
     source_path: Path,
     step_index: int,
+    strip_thought: bool,
 ) -> dict[str, Any] | None:
     """Agent turn with no tool calls but non-empty assistant text (e.g. final answer)."""
     tool_calls = step.get("toolCalls") or []
     if isinstance(tool_calls, list) and tool_calls:
         return None
 
-    assistant_text = step.get("content")
-    if not isinstance(assistant_text, str) or not assistant_text.strip():
+    assistant_text = _clean_assistant_content(
+        step.get("content"), strip_thought=strip_thought
+    )
+    if not assistant_text:
         return None
 
-    user_text = _user_content_from_input_messages(step.get("inputMessages"))
+    user_text = _user_content_from_input_messages(
+        step.get("inputMessages"), strip_thought=strip_thought
+    )
     if user_text is None:
         print(
             f"skip {source_path} step[{step_index}]: final-assistant turn has no user "
@@ -313,7 +422,7 @@ def react_final_assistant_step_to_swift_line(
     if system_text is not None and system_text.strip():
         messages.append({"role": "system", "content": system_text.strip()})
     messages.append({"role": "user", "content": user_text})
-    messages.append({"role": "assistant", "content": assistant_text.strip()})
+    messages.append({"role": "assistant", "content": assistant_text})
 
     return {
         "tools": json.dumps(tools, ensure_ascii=False),
@@ -327,6 +436,7 @@ def iter_react_steps_rows(
     system_text: str | None,
     tools: list[dict[str, Any]],
     include_final_assistant: bool,
+    strip_thought: bool,
 ) -> Iterator[dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -347,6 +457,7 @@ def iter_react_steps_rows(
             tools=tools,
             source_path=path,
             step_index=i,
+            strip_thought=strip_thought,
         )
         if line is not None:
             yield line
@@ -357,6 +468,7 @@ def iter_react_steps_rows(
                 tools=tools,
                 source_path=path,
                 step_index=i,
+                strip_thought=strip_thought,
             )
             if final_line is not None:
                 yield final_line
@@ -446,6 +558,15 @@ def main() -> None:
             "(text-only reply, e.g. final answer). Use --no-include-final-assistant to skip."
         ),
     )
+    parser.add_argument(
+        "--strip-thought",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Remove leading assistant Thought: text and embedded Thought: history from "
+            "react_steps / legacy messages (default: disabled; preserve raw training data)."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.tools_json.is_file():
@@ -480,6 +601,7 @@ def main() -> None:
                 system_text=system_text,
                 tools=tools,
                 include_final_assistant=args.include_final_assistant,
+                strip_thought=args.strip_thought,
             ):
                 rows.append(line)
             n_file = len(rows) - n_before
@@ -494,7 +616,14 @@ def main() -> None:
             sys.exit("No input JSON files found")
         for fp in in_files:
             rec = load_task_record(fp)
-            rows.append(record_to_swift_line(rec, system_text=system_text, tools=tools))
+            rows.append(
+                record_to_swift_line(
+                    rec,
+                    system_text=system_text,
+                    tools=tools,
+                    strip_thought=args.strip_thought,
+                )
+            )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as fout:

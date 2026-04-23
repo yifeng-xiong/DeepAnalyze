@@ -43,9 +43,9 @@ export MODELSCOPE_CACHE="${MODELSCOPE_CACHE:-${LOCAL_TMP_ROOT}/modelscope-cache}
 export TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR:-${LOCAL_TMP_ROOT}/torch-extensions}"
 mkdir -p "${TMPDIR}" "${TRITON_CACHE_DIR}" "${HF_HOME}" "${MODELSCOPE_CACHE}" "${TORCH_EXTENSIONS_DIR}"
 
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-/srv/disk00/yifengx4/swift_agent_local_llm_sft/v7-20260408-170250/checkpoint-80}"
-VAL_DATASET="${VAL_DATASET:-$REPO_ROOT/data/swift_agent_toolcall_infer_smoke.jsonl}"
-RESULT_PATH="${RESULT_PATH:-/srv/disk00/yifengx4/swift_agent_local_llm_sft/v7-20260408-170250/infer_result.jsonl}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-/srv/disk00/yifengx4/swift_agent_dsr1_local_llm_sft/v0-20260410-231316/checkpoint-80}"
+VAL_DATASET="${VAL_DATASET:-$REPO_ROOT/data/swift_agent_biomedical-easy-6.jsonl}"
+RESULT_PATH="${RESULT_PATH:-/srv/disk00/yifengx4/swift_agent_dsr1_local_llm_sft/v0-20260410-231316/infer_result.jsonl}"
 AGENT_TEMPLATE="${AGENT_TEMPLATE:-react_en}"
 INFER_BACKEND="${INFER_BACKEND:-pt}"
 MAX_BATCH_SIZE="${MAX_BATCH_SIZE:-1}"
