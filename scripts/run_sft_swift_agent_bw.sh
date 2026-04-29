@@ -25,7 +25,7 @@ export PYTHONNOUSERSITE=1
 export DS_SKIP_CUDA_CHECK="${DS_SKIP_CUDA_CHECK:-1}"
 
 # Scratch on local disk: short-lived temp (TMPDIR) vs longer-lived caches (LOCAL_TMP_ROOT).
-SCRATCH="${SCRATCH:-/srv/disk00/yifengx4}"
+SCRATCH="${SCRATCH:-/user-data/yifengx4}"
 export TMPDIR="${TMPDIR:-${SCRATCH}/tmp}"
 LOCAL_TMP_ROOT="${LOCAL_TMP_ROOT:-${SCRATCH}/deepanalyze}"
 export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${LOCAL_TMP_ROOT}/triton-cache}"

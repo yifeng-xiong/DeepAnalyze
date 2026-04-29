@@ -27,8 +27,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SWIFT_ROOT="${SWIFT_ROOT:-$ROOT/deepanalyze/ms-swift}"
 DATASET="${DATASET:-$ROOT/data/swift_agent.jsonl}"
-MODEL="${MODEL:-$ROOT/DeepAnalyze-8B}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/DeepAnalyze-8B-sft}"
+MODEL="${MODEL:-/user-data/yifengx4/models/DeepAnalyze-8B}"
+OUTPUT_DIR="${OUTPUT_DIR:-/user-data/yifengx4/sft_model}"
 # Local checkpoint: omit or USE_HF=false. Hub id (org/name): set USE_HF=true.
 USE_HF="${USE_HF:-false}"
 
@@ -36,8 +36,8 @@ AGENT_TEMPLATE="${AGENT_TEMPLATE:-react_en}"
 LOSS_SCALE="${LOSS_SCALE:-react}"
 MODEL_TYPE="${MODEL_TYPE:-deepseek_r1_distill}"
 TORCH_DTYPE="${TORCH_DTYPE:-bfloat16}"
-NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-5}"
-MAX_LENGTH="${MAX_LENGTH:-16384}"
+NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-3}"
+MAX_LENGTH="${MAX_LENGTH:-32768}"
 
 LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-1}"
